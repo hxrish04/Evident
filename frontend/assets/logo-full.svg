@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 264 44" fill="none">
+  <rect x="3.5" y="7.5" width="27" height="27" rx="7.5" stroke="#4ECDC4" stroke-width="2.2"/>
+  <circle cx="11.5" cy="15.5" r="2.3" fill="#4ECDC4"/>
+  <path d="M16.5 15.5H24.5" stroke="#4ECDC4" stroke-linecap="round" stroke-width="2.2"/>
+  <path d="M11.5 24.5L15.5 28.5L23.5 19.5" stroke="#4ECDC4" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.3"/>
+  <text x="48" y="28.5" fill="#F3EEE4" font-family="system-ui, -apple-system, sans-serif" font-size="22" font-weight="600" letter-spacing="3.2">EVIDENT</text>
+</svg>

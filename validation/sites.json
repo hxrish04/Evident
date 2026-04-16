@@ -1,0 +1,20 @@
+[
+  {
+    "label": "UAB Neurobiology Faculty",
+    "url": "https://www.uab.edu/medicine/neurobiology/faculty"
+  },
+  {
+    "label": "NYU Langone Neuroscience Faculty",
+    "url": "https://med.nyu.edu/departments-institutes/neuroscience/faculty"
+  },
+  {
+    "name": "Johns Hopkins Neuroscience Faculty",
+    "url": "https://neuroscience.jhu.edu/research/faculty",
+    "interest": "neuroscience research",
+    "expected_min_contacts": 5
+  },
+  {
+    "label": "UC Riverside Neuroscience Faculty",
+    "url": "https://neuroscience.ucr.edu/faculty"
+  }
+]

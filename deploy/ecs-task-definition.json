@@ -1,0 +1,40 @@
+{
+  "family": "evident",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "1024",
+  "memory": "4096",
+  "executionRoleArn": "arn:aws:iam::784369108261:role/ecsTaskExecutionRole",
+  "containerDefinitions": [
+    {
+      "name": "evident",
+      "image": "784369108261.dkr.ecr.us-east-2.amazonaws.com/evident:latest",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        { "name": "APP_ENV", "value": "production" },
+        { "name": "PORT", "value": "8080" },
+        { "name": "PLAYWRIGHT_BROWSERS_PATH", "value": "/ms-playwright" }
+      ],
+      "secrets": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:us-east-2:784369108261:secret:evident/anthropic_api_key-AqBOmw:ANTHROPIC_API_KEY::"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/evident",
+          "awslogs-region": "us-east-2",
+          "awslogs-stream-prefix": "ecs"
+        }
+      }
+    }
+  ]
+}

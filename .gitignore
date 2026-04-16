@@ -1,0 +1,56 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Screenshots and local test artifacts
+screenshots/
+*.png
+*.jpg
+*.jpeg
+!docs/screenshots/
+!frontend/assets/*.png
+!frontend/assets/*.jpg
+!docs/screenshots/*.png
+
+# Logs
+*.log
+logs/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# AWS/deployment artifacts (keep configs, not secrets)
+.aws/
+*.pem
+*.key
+
+# Local test outputs
+test_output/
+tmp/
+validation/latest_report.json
