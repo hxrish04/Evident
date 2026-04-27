@@ -20,19 +20,19 @@ Evident is a bounded AI decision system that ranks research contacts with eviden
 flowchart TD
     A[Input: Faculty URL + Research Focus] --> B[Extract + structure evidence]
     B --> C[LLM evaluation + confidence scoring]
-    C --> D{**Sufficient confidence?**}
+    C --> D{Sufficient confidence?}
 
     D -- Yes --> E[Rank contacts]
     D -- No --> F[Bounded loop: 1 retrieval + 1 re-check]
     F --> E
 
-    E --> G[Outreach drafts (top-ranked only)]
-    E --> H[Audit trail (citations + confidence + decisions)]
+    E --> G[Outreach drafts: top-ranked only]
+    E --> H[Audit trail: citations + confidence + decisions]
 
     subgraph Controls [Reliability + Cost Controls (Supporting)]
       I[Run caps on evals, drafts, retries]
       J[Pre-filter cuts model calls]
-      K[**Refusal state: "insufficient evidence"**]
+      K[Refusal state: insufficient evidence]
     end
 
     Controls -.-> C
