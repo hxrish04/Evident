@@ -29,7 +29,7 @@ flowchart TD
     E --> G[Outreach drafts: top-ranked only]
     E --> H[Audit trail: citations + confidence + decisions]
 
-    subgraph Controls [Reliability + Cost Controls (Supporting)]
+    subgraph Controls["Reliability and Cost Controls - Supporting"]
       I[Run caps on evals, drafts, retries]
       J[Pre-filter cuts model calls]
       K[Refusal state: insufficient evidence]
