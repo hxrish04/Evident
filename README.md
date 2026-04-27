@@ -10,6 +10,45 @@ Live demo: on-demand AWS ECS deployment
 
 ---
 
+## Evident: AI system that ranks outreach targets while minimizing hallucination and API cost
+
+Evident is a bounded AI decision system that ranks research contacts with evidence-backed scoring, explicit uncertainty refusal, and cost-safe run limits.
+
+### System architecture
+
+```mermaid
+flowchart TD
+    A[Input: Faculty URL + Research Focus] --> B[Extract + structure evidence]
+    B --> C[LLM evaluation + confidence scoring]
+    C --> D{**Sufficient confidence?**}
+
+    D -- Yes --> E[Rank contacts]
+    D -- No --> F[Bounded loop: 1 retrieval + 1 re-check]
+    F --> E
+
+    E --> G[Outreach drafts (top-ranked only)]
+    E --> H[Audit trail (citations + confidence + decisions)]
+
+    subgraph Controls [Reliability + Cost Controls (Supporting)]
+      I[Run caps on evals, drafts, retries]
+      J[Pre-filter cuts model calls]
+      K[**Refusal state: "insufficient evidence"**]
+    end
+
+    Controls -.-> C
+
+    style K fill:#2b2b2b,stroke:#60a5fa,stroke-width:2px,color:#ffffff
+```
+
+### Why this is different
+
+- Deterministic pre-filter reduces unnecessary model calls before LLM evaluation.
+- Bounded uncertainty loop runs at most one extra retrieval and one re-check.
+- Explicit refusal state returns `insufficient_evidence` instead of forcing a low-confidence decision.
+- Full audit trail stores citations, confidence, and decision history per contact.
+
+---
+
 ## Demo
 
 This project is model-backed and not kept publicly hosted full-time to avoid unnecessary API and infrastructure cost.
