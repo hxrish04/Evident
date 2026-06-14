@@ -2,9 +2,9 @@
 
 **Evidence-grounded AI decision system for research outreach.**
 
-Not a scraper. Not a chatbot. A system that determines who is worth
-contacting, explains why, shows its evidence, and refuses to
-recommend when confidence is too low.
+Evident figures out who is worth contacting, explains why with cited
+evidence, and holds back when the public evidence is too thin to justify
+a recommendation. It's a decision system, not a scraper or a chatbot.
 
 Live demo: on-demand AWS ECS deployment
 
@@ -169,8 +169,8 @@ one hardcoded parser:
   outside this family return a compatibility report rather than failing silently.
 - **Evidence scraper (pluggable):** a profile-driven, AI-assisted scraper engine
   (vendored under `evidence_scraper/`) that extracts the same contact shape from a
-  much wider range of layouts — validated across 12+ university and law-firm
-  directories — and feeds Evident's evaluation/refusal pipeline unchanged.
+  much wider range of layouts, validated across 12+ university and law-firm
+  directories, and feeds Evident's evaluation/refusal pipeline unchanged.
 
 ---
 
