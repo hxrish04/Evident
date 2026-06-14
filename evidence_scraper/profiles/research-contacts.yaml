@@ -1,0 +1,63 @@
+# Evidence-scraper profile for pulling research/technical contacts into Evident.
+# The built-in faculty parser only understands certain HTML; this profile lets
+# the scraper extract the same RawContact-shaped fields from arbitrary people
+# pages, broadening the sites Evident can evaluate.
+
+name: "Research Contacts"
+slug: "research-contacts"
+
+target:
+  description: >-
+    a profile or directory entry for a single researcher, professor, lab member,
+    or technical staff member, showing their name, role, and research/work focus
+  include_rules:
+    - "Individual faculty/staff/researcher profile pages count."
+    - "A directory row with a name + title + research blurb counts."
+  exclude_rules:
+    - "News articles, event pages, and course catalogs are NOT targets."
+    - "Index pages listing many people with no per-person detail are NOT targets."
+
+attributes:
+  - name: full_name
+    type: string
+    description: "The person's full name exactly as displayed on the page."
+  - name: title
+    type: string
+    description: "Their role/title, e.g. 'Associate Professor', 'Research Scientist'."
+  - name: research_focus
+    type: string
+    description: >-
+      A 1-3 sentence summary of the person's research areas, lab, or work focus.
+      Ground it in text on the page and put the exact supporting sentence in
+      source_text.
+  - name: email
+    type: string
+    description: "Direct contact email if shown on the page."
+  - name: affiliation
+    type: string
+    description: "Department, lab, school, or organization they belong to."
+
+discovery:
+  include_keywords:
+    - "faculty"
+    - "people"
+    - "team"
+    - "staff"
+    - "directory"
+    - "profile"
+  url_hints:
+    - "/people/"
+    - "/faculty/"
+    - "/team/"
+    - "/staff/"
+    - "/profile/"
+  exclude_patterns:
+    - "/news"
+    - "/events"
+    - "/courses"
+
+extraction_rules:
+  - "If the page is a single person's profile, extract that one person."
+  - "research_focus must be grounded in text actually on the page; the exact supporting sentence belongs in source_text."
+
+sites: []

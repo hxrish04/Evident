@@ -9,6 +9,7 @@ import json
 import os
 from statistics import mean
 
+from agent.sources import ContactSource, DirectoryPageSource
 from ai.evaluate import (
     ContactEvaluation,
     apply_recommendation_threshold,
@@ -548,7 +549,13 @@ class AgentPipeline:
         return metrics
 
     # This is the top-level orchestrator: one call in, full saved run out.
-    def run(self, url: str, run_id: int | None = None, exclusion_list: dict[str, list[str]] | None = None) -> dict:
+    def run(
+        self,
+        url: str,
+        run_id: int | None = None,
+        exclusion_list: dict[str, list[str]] | None = None,
+        source: ContactSource | None = None,
+    ) -> dict:
         db.init_db()
         run_id = run_id or db.create_run(target_url=url, interest_area=self.user_goal)
         self.target_domain = domain_from_url(url)
@@ -574,11 +581,13 @@ class AgentPipeline:
                 self.emit_progress(run_id, "failed", "Run stopped. robots.txt appears to disallow this path.", status="failed", metrics=metrics, run_insight=run_insight)
                 return {"status": "blocked_or_restricted", "run_id": run_id, "contacts": [], "drafts": [], "metrics": metrics, "run_insight": run_insight}
 
-            self.emit_progress(run_id, "loading_page", f"Loading {url}")
-            text, html = self.load_page(url)
-
-            self.emit_progress(run_id, "extracting_contacts", "Extracting contacts from faculty page")
-            raw_contacts = self.extract_raw_contacts(text, html, url)
+            # The source is the pluggable front-end. Default = load+parse one
+            # directory page; a scraper-backed source can be passed in instead
+            # without changing anything downstream of raw_contacts.
+            source = source or DirectoryPageSource()
+            source_result = source.fetch(self, url, run_id)
+            text, html = source_result.page_text, source_result.page_html
+            raw_contacts = source_result.raw_contacts
             self.emit_progress(run_id, "extracting_contacts", f"Found {len(raw_contacts)} raw contacts", contacts_found=len(raw_contacts))
 
             cleaned_contacts = self.clean_contact_list(raw_contacts)

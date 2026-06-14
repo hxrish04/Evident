@@ -1,0 +1,102 @@
+# =============================================================================
+# PROFILE TEMPLATE — copy this file (or run `python -m uscraper init <name>`)
+# and fill in the blanks. A profile describes ONE scraping project:
+# what pages you want, what data to pull from them, and which sites to visit.
+#
+# Everything the scraper does (LLM prompts, JSON validation, URL filtering)
+# is generated from this file. No code changes needed for a new project.
+# =============================================================================
+
+# Human-readable project name. Shown in prompts and logs.
+name: "My Project"
+
+# Short id used for the data folder: data/<slug>/. Lowercase, hyphens only.
+slug: "my-project"
+
+# -----------------------------------------------------------------------------
+# TARGET — what kind of page are you looking for?
+# Be precise: this text goes straight into the LLM prompt and decides which
+# pages get extracted vs rejected.
+# -----------------------------------------------------------------------------
+target:
+  description: "a product detail page for a single <THING> model"
+
+  # Optional. Extra rules for what still counts as a target.
+  include_rules: []
+    # - "Pages for discontinued models still count."
+
+  # Optional. Things that look similar but should be rejected.
+  exclude_rules: []
+    # - "Category or comparison pages listing multiple models are NOT targets."
+    # - "Accessory and parts pages are NOT targets."
+
+# -----------------------------------------------------------------------------
+# ATTRIBUTES — the data to extract from each target page.
+# types: number | integer | boolean | string
+# unit (numbers only): the unit you want values reported in; the LLM converts
+#   from other units found on the page.
+# description: be specific — this is the LLM's only instruction for the field.
+# -----------------------------------------------------------------------------
+attributes:
+  - name: price_usd
+    type: number
+    unit: "USD"
+    description: "Retail price in US dollars. Convert from other currencies only if the page states the rate."
+
+  - name: weight_lb
+    type: number
+    unit: "lb"
+    description: "Item weight in pounds. Convert from kg if needed (1 kg = 2.20462 lb)."
+
+  - name: in_stock
+    type: boolean
+    description: "True if the page indicates the item is currently available/in stock."
+
+  - name: color
+    type: string
+    description: "Primary color name as stated on the page."
+
+# -----------------------------------------------------------------------------
+# DISCOVERY HINTS — optional but recommended. Helps find relevant URLs faster
+# and keeps junk out of the candidate pool. If left empty, discovery is
+# generous and lets the LLM sort everything out (slower, more LLM calls).
+# -----------------------------------------------------------------------------
+discovery:
+  # Phrases matched (case-insensitive) against URLs and link text.
+  include_keywords: []
+    # - "espresso"
+    # - "coffee-machine"
+
+  # URL path fragments that suggest a detail page on most sites.
+  url_hints:
+    - "/product/"
+    - "/products/"
+    - "/p/"
+    - "/item/"
+    - "/model/"
+    - "/models/"
+    - "/spec"
+
+  # Extra regex patterns to exclude, on top of built-in junk filters
+  # (assets, login, cart, legal, news, careers, etc. are always excluded).
+  exclude_patterns: []
+    # - "/refurbished"
+
+# -----------------------------------------------------------------------------
+# EXTRACTION RULES — optional free-form rules appended to the LLM prompt.
+# Use for project-specific judgment calls.
+# -----------------------------------------------------------------------------
+extraction_rules: []
+  # - "If multiple variants are listed, extract the base variant."
+  # - "Prefer manufacturer specs over marketing copy."
+
+# -----------------------------------------------------------------------------
+# SITES — the websites to scrape. start_urls should point at the most
+# relevant listing/category pages (not necessarily the homepage); discovery
+# stays within the path scope of each start URL.
+# -----------------------------------------------------------------------------
+sites:
+  - name: "Example Site"
+    slug: "example-site"
+    start_urls:
+      - "https://www.example.com/products"

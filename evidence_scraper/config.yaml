@@ -1,0 +1,40 @@
+# =============================================================================
+# uscraper — ENGINE configuration (how to fetch/crawl).
+# What to scrape lives in profiles/*.yaml — not here.
+# =============================================================================
+
+# Claude model used for URL discovery + attribute extraction.
+model: "claude-sonnet-4-6"
+
+# API key: prefer .env.local (ANTHROPIC_API_KEY=sk-ant-...) over this file.
+# anthropic_api_key: "sk-ant-..."
+
+# Root data directory. Each profile gets its own subfolder: data/<profile-slug>/
+data_dir: "data"
+
+discovery:
+  max_crawl_depth: 3            # BFS depth from start URLs when sitemap is unusable
+  max_pages_per_site: 400       # cap so we don't explore the whole site
+  min_candidates_before_crawl: 5
+  max_candidates_to_llm: 250    # cap on links handed to AI discovery
+  request_timeout_sec: 30
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+  render_js: true               # render start pages in a browser (sees JS-loaded links)
+  use_sitemap: true             # also pull candidates from sitemap.xml
+
+fetch:
+  headless: true
+  http_first: true              # try a cheap HTTP GET before launching a browser page
+  http_first_min_chars: 800     # if HTTP result has less visible text, render instead
+  wait_until: "networkidle"     # or "domcontentloaded"
+  navigation_timeout_ms: 45000
+  per_request_delay_ms: 1000    # polite pause between fetches per domain (+ jitter)
+  retries: 2                    # browser retries with exponential backoff
+  auto_scroll: true             # scroll to trigger lazy-loaded content
+  max_scroll_steps: 8
+  scroll_pause_ms: 700
+  max_load_more_clicks: 3       # click "Load more" buttons up to N times
+
+extraction:
+  max_chars_per_page: 60000     # hard cap on chars sent to Claude per page
+  min_chars_per_page: 200       # skip pages with less visible text than this

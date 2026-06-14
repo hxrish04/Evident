@@ -1,0 +1,77 @@
+# =============================================================================
+# EXAMPLE PROFILE — a fully filled-in profile for a fictional project that
+# scrapes espresso machine product pages. Use it as a reference for how
+# specific the descriptions and rules should be, then write your own with
+# `python -m uscraper init <name>`.
+# =============================================================================
+
+name: "Espresso Machines"
+slug: "espresso-machines"
+
+target:
+  description: >-
+    a product detail page for a single espresso machine model
+  include_rules:
+    - "Both consumer and commercial espresso machines count."
+    - "Combination espresso/drip machines count if espresso is a primary function."
+  exclude_rules:
+    - "Category or listing pages showing multiple machines are NOT targets."
+    - "Accessory pages (grinders, tampers, cleaning kits, pods) are NOT targets."
+    - "Refurbished/open-box listing pages are NOT targets."
+
+attributes:
+  - name: price_usd
+    type: number
+    unit: "USD"
+    description: >-
+      Current retail price in US dollars as shown on the page. If a sale price
+      and a list price are both shown, use the sale price and note the list
+      price in source_text.
+  - name: boiler_type
+    type: string
+    description: >-
+      Boiler configuration as stated, e.g. 'single boiler', 'dual boiler',
+      'heat exchanger', 'thermoblock'.
+  - name: pump_pressure_bar
+    type: number
+    unit: "bar"
+    description: "Maximum pump pressure in bar. Convert from psi if needed (1 bar = 14.5038 psi)."
+  - name: water_tank_l
+    type: number
+    unit: "L"
+    description: "Water tank capacity in liters. Convert from oz if needed (1 L = 33.814 fl oz)."
+  - name: has_grinder
+    type: boolean
+    description: "True if the machine has a built-in grinder (often marketed as 'bean-to-cup')."
+  - name: weight_lb
+    type: number
+    unit: "lb"
+    description: "Machine weight in pounds. Convert from kg if needed (1 kg = 2.20462 lb)."
+
+discovery:
+  include_keywords:
+    - "espresso"
+    - "coffee-machine"
+    - "coffee machine"
+    - "bean-to-cup"
+  url_hints:
+    - "/product/"
+    - "/products/"
+    - "/p/"
+    - "/machines/"
+    - "/espresso/"
+  exclude_patterns:
+    - "/accessories"
+    - "/grinders"
+    - "/pods"
+    - "/capsules"
+    - "/refurbished"
+
+extraction_rules:
+  - "If multiple color variants are listed at different prices, extract the cheapest variant."
+
+sites:
+  - name: "Example Coffee Co"
+    slug: "example-coffee-co"
+    start_urls:
+      - "https://www.example.com/espresso-machines"
