@@ -80,7 +80,6 @@ Examples of valid gap reasons:
 - title suggests administrative role, not active research
 - no researchable public profile found
 Vague gaps like "limited information" are not acceptable. Be specific about what is missing or misaligned.
-Note: conflicting signals were detected in public sources for this contact. Factor this uncertainty into your confidence and reasoning when relevant.
 """
 
 

@@ -20,7 +20,7 @@ from urllib.robotparser import RobotFileParser
 import httpx
 
 
-DEFAULT_USER_AGENT = "AI-Outreach-Agent/1.0"
+DEFAULT_USER_AGENT = "Evident/1.0"
 DEFAULT_TIMEOUT = 15.0
 DEFAULT_MAX_REDIRECTS = 3
 MAX_REQUESTS_PER_RUN = int(os.getenv("MAX_REQUESTS_PER_RUN", "40"))

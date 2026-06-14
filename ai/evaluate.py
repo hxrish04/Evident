@@ -9,7 +9,6 @@ import json
 import os
 import re
 from dataclasses import dataclass
-from statistics import mean
 from typing import Optional
 
 import anthropic
@@ -27,7 +26,6 @@ from extractor.extract import (
     clean_display_text,
     detect_conflicts,
     detect_evidence_agreement,
-    goal_keywords,
 )
 from prompts.templates import (
     COMPARE_TOP_PROMPT,
@@ -90,7 +88,41 @@ def get_client() -> anthropic.Anthropic | None:
     api_key = os.getenv("ANTHROPIC_API_KEY")
     if not api_key:
         return None
-    return anthropic.Anthropic(api_key=api_key)
+    # Bound latency and auto-retry transient failures (429/5xx) with backoff, so
+    # a slow or rate-limited API degrades to the heuristic path quickly instead
+    # of hanging the whole run.
+    return anthropic.Anthropic(api_key=api_key, timeout=30.0, max_retries=2)
+
+
+def first_text(response) -> str:
+    """Safely pull the first text block out of an Anthropic response.
+
+    Guards against an empty content list or a non-text leading block (e.g. a
+    tool-use or thinking block), which would otherwise raise IndexError /
+    AttributeError on `first_text(response)`.
+    """
+    blocks = getattr(response, "content", None) or []
+    for block in blocks:
+        if getattr(block, "type", None) == "text":
+            return block.text or ""
+    if blocks and hasattr(blocks[0], "text"):
+        return blocks[0].text or ""
+    return ""
+
+
+def evidence_is_structurally_insufficient(contact: RawContact) -> bool:
+    """Canonical floor for refusing a confident recommendation: too few
+    independent sources, too little research detail, or an unverified identity.
+
+    Single source of truth shared by the heuristic path, the live LLM path, and
+    the second pass, so the "refuse when evidence is weak" guarantee cannot be
+    bypassed by an over-confident model.
+    """
+    return (
+        len(contact.evidence or []) < 2
+        or len((contact.research_text or "").strip()) < 80
+        or not contact.identity_verified
+    )
 
 
 def parse_json_payload(raw_text: str) -> dict:
@@ -187,7 +219,6 @@ _HER_OBJECT_FOLLOWERS = {
 def _replace_her_token(match: re.Match[str]) -> str:
     text = match.string
     token = match.group(0)
-    before = text[: match.start()]
     after = text[match.end() :]
 
     next_match = re.match(r"\s*([A-Za-z]+)", after)
@@ -584,7 +615,7 @@ def fallback_evaluation(contact: RawContact, user_goal: str, student_profile: st
         user_goal=user_goal,
     )
     insufficient_reason = None
-    if len(contact.evidence or []) < 2 or len((contact.research_text or "").strip()) < 80 or not contact.identity_verified:
+    if evidence_is_structurally_insufficient(contact):
         evaluation_status = "insufficient_evidence"
         recommended = False
         insufficient_reason = "Public evidence is too weak to make a confident recommendation."
@@ -730,7 +761,7 @@ def evaluate_contact(
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
-        data = parse_json_payload(response.content[0].text)
+        data = parse_json_payload(first_text(response))
         relevance_score = float(data.get("relevance_score", 0.0))
         reason_trace = normalize_reason_trace(data.get("reason_trace"))
         returned_status = str(data.get("status", "")).strip().lower()
@@ -742,6 +773,13 @@ def evaluate_contact(
         else:
             recommended = bool(data.get("recommended", False))
             evaluation_status = "recommended" if recommended else "not_recommended"
+        # Structural floor: no matter how confident the model sounds, refuse when
+        # the underlying public evidence is too thin to support a decision.
+        if evidence_is_structurally_insufficient(contact):
+            recommended = False
+            evaluation_status = "insufficient_evidence"
+            if not insufficient_reason:
+                insufficient_reason = "Public evidence is too weak to make a confident recommendation."
         evidence_agreement = detect_evidence_agreement(supporting_chunks or [], contact)
         # Claude can sound more certain than the evidence deserves, so the hard threshold gets the last word here.
         evaluation_status, recommended, threshold_reason = apply_recommendation_threshold(
@@ -859,7 +897,7 @@ def reevaluate_contact(
             max_tokens=250,
             messages=[{"role": "user", "content": prompt}],
         )
-        data = parse_json_payload(response.content[0].text)
+        data = parse_json_payload(first_text(response))
         revised_status = str(data.get("revised_status", evaluation.evaluation_status)).strip().lower()
         if revised_status not in {"recommended", "not_recommended", "insufficient_evidence"}:
             revised_status = evaluation.evaluation_status
@@ -873,6 +911,13 @@ def reevaluate_contact(
             elif revised_score < RECOMMENDATION_THRESHOLD:
                 revised_status = "not_recommended"
                 revision_reason = f"Score below recommendation threshold ({RECOMMENDATION_THRESHOLD})"
+
+        # The second pass must never upgrade a structurally unsupported contact.
+        # If the underlying evidence is still too thin, the honest verdict is to
+        # refuse, regardless of the model's revised status.
+        if evaluation.raw_contact and evidence_is_structurally_insufficient(evaluation.raw_contact):
+            revised_status = "insufficient_evidence"
+            revision_reason = "Second pass found public evidence still too weak for a confident recommendation."
 
         evaluation.second_pass_triggered = True
         evaluation.revised_score = revised_score
@@ -1035,7 +1080,7 @@ def generate_run_insight(metrics: dict) -> str:
             max_tokens=200,
             messages=[{"role": "user", "content": prompt}],
         )
-        text = response.content[0].text.strip()
+        text = first_text(response).strip()
         return normalize_run_insight(text)
     except Exception as exc:
         print(f"[ai/run_insight] Falling back: {exc}")
@@ -1138,7 +1183,7 @@ def generate_email(
             max_tokens=700,
             messages=[{"role": "user", "content": prompt}],
         )
-        data = parse_json_payload(response.content[0].text)
+        data = parse_json_payload(first_text(response))
         return OutreachDraft(
             contact_name=evaluation.contact_name,
             contact_email=evaluation.raw_contact.email if evaluation.raw_contact else "",
@@ -1214,7 +1259,7 @@ def compare_ranked_contacts(contact_a: dict, contact_b: dict) -> str:
             max_tokens=120,
             messages=[{"role": "user", "content": prompt}],
         )
-        return clamp_single_sentence(response.content[0].text)
+        return clamp_single_sentence(first_text(response))
     except Exception as exc:
         print(f"[ai/compare] Falling back: {exc}")
         return clamp_single_sentence(
