@@ -155,15 +155,18 @@ Bounded loop proof: second-pass counts plus adaptive retrieval trigger/chunk met
 
 ---
 
-## Validated sites
+## Site coverage
 
-Tested against faculty-style directory pages:
-- UAB Neurobiology
-- Johns Hopkins Neuroscience
-- NYU Langone Neuroscience
+Evident ingests contacts through a pluggable `ContactSource`, so it isn't tied to
+one hardcoded parser:
 
-Sites outside this family return a compatibility report explaining
-why they are not supported, rather than silently failing.
+- **Directory parser (default):** a deterministic faculty-page parser, validated
+  against faculty-style directories (e.g. UAB, Johns Hopkins, NYU Langone). Pages
+  outside this family return a compatibility report rather than failing silently.
+- **Evidence scraper (pluggable):** a profile-driven, AI-assisted scraper engine
+  (vendored under `evidence_scraper/`) that extracts the same contact shape from a
+  much wider range of layouts — validated across 12+ university and law-firm
+  directories — and feeds Evident's evaluation/refusal pipeline unchanged.
 
 ---
 
