@@ -1406,6 +1406,13 @@ window.__EVIDENT_REDESIGN__ = true;
     const avgTokensText = modelCallsMade > 0
       ? formatNumeric(state.metrics.avg_tokens_per_evaluation || 0)
       : 'n/a in cached or heuristic runs';
+    const estCostUsd = Number(state.metrics.estimated_cost_usd || 0);
+    const costPerRecommended = Number(state.metrics.estimated_cost_per_recommended_usd || 0);
+    const triageModel = state.metrics.triage_model || '';
+    const circuitEscalations = Number(state.metrics.circuit_breaker_escalations || 0);
+    const injectionAttempts = Number(state.metrics.injection_attempts_detected || 0);
+    const totalTokens = Number(state.metrics.total_input_tokens || 0) + Number(state.metrics.total_output_tokens || 0);
+    const formatUsd = (value) => `$${Number(value || 0).toFixed(value >= 0.1 ? 2 : 4)}`;
 
     el.insightsBody.innerHTML = `
       <section class="insight-block">
@@ -1446,6 +1453,9 @@ window.__EVIDENT_REDESIGN__ = true;
                   <li>Model calls avoided: ${escapeHtml(String(derived.modelCallsSaved))} via pre-filtering and sent-contact exclusions.</li>
                   <li>Model calls made: ${escapeHtml(String(modelCallsMade))}${modelCallsMade === 0 ? ' (cached / heuristic run).' : '.'}</li>
                   <li>Avg tokens per evaluation: ${escapeHtml(avgTokensText)}.</li>
+                  ${estCostUsd > 0 ? `<li>Estimated run cost: ${escapeHtml(formatUsd(estCostUsd))} across ${escapeHtml(formatNumeric(totalTokens))} tokens${costPerRecommended > 0 ? `, ${escapeHtml(formatUsd(costPerRecommended))} per recommended contact` : ''}.</li>` : ''}
+                  ${triageModel ? `<li>Tiered routing: cheap triage model handled the first pass${circuitEscalations > 0 ? `, ${escapeHtml(String(circuitEscalations))} contact(s) auto-escalated to the primary model after a triage failure` : ''}.</li>` : ''}
+                  ${injectionAttempts > 0 ? `<li>Prompt-injection attempts detected and neutralized: ${escapeHtml(String(injectionAttempts))}.</li>` : ''}
                   <li>Requests processed: ${escapeHtml(String(derived.requestsAttempted))}, with ${escapeHtml(String(derived.blockedResponses))} blocked or rate-limited.</li>
                 </ul>
               </div>

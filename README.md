@@ -111,6 +111,35 @@ Three possible outcomes per contact:
 
 ---
 
+## Reliability engineering (measured, not asserted)
+
+Evident treats the claims above as things to *prove*, not just build:
+
+- **Offline evaluation harness + CI gate.** A labeled benchmark runs the real
+  decision path against a stubbed model (no API calls) and reports per-class
+  precision/recall/F1, a confusion matrix, confidence calibration (ECE +
+  direction), and the safety metrics that define the product: **false-recommend
+  rate on insufficient-evidence cases (target 0)** and prompt-injection
+  resistance. Run `python -m eval.run`; it also runs in CI (`pytest tests/`) so
+  any change that weakens "refuse when evidence is weak" fails the build.
+- **Tiered model routing (cost-aware).** Every shortlisted contact is triaged on
+  a cheaper model first; only *uncertain* contacts are escalated to the primary
+  model on the second pass. A self-healing circuit breaker falls back to the
+  primary model (not the heuristic path) if the triage model errors. Configure
+  with `ANTHROPIC_TRIAGE_MODEL` / `ANTHROPIC_EVAL_MODEL`, or disable via
+  `EVIDENT_TIERED_ROUTING=0`. The structural refusal floor applies to both tiers.
+- **Prompt-injection defense.** Scraped, third-party text is the injection
+  surface. Every untrusted field is wrapped in tamper-resistant delimiters
+  (which the content cannot forge or close early), common override phrasings and
+  fake role-turns are neutralized, and a security preamble tells the model that
+  wrapped content is data, never instructions. The structural floor is still the
+  last line of defense. Detected attempts are counted per run.
+- **Cost & token observability.** Input/output tokens and estimated USD are
+  tracked per evaluation and per model, surfaced as run cost, cost-per-recommended,
+  and "model calls saved by the pre-filter" in the Insights view and `/metrics`.
+
+The live system self-check is also exposed at `GET /eval`.
+
 ## Bounded agent loop
 
 Evident uses a constrained uncertainty loop, not open-ended autonomy:

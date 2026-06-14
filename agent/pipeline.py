@@ -10,10 +10,14 @@ import os
 from statistics import mean
 
 from agent.sources import ContactSource, DirectoryPageSource
+from ai.costs import estimate_cost
 from ai.evaluate import (
     ContactEvaluation,
+    DEFAULT_MODEL,
+    ModelRouter,
     apply_recommendation_threshold,
     evaluate_all,
+    evaluation_cost_usd,
     generate_emails_for_top,
     generate_run_insight,
     is_uncertain_evaluation,
@@ -58,6 +62,8 @@ class AgentPipeline:
         self.access_tracker: RunAccessTracker | None = None
         self.robots_policy: dict | None = None
         self.site_adapter: dict | None = None
+        # One router per run: cheap triage first pass, primary model on escalation.
+        self.model_router = ModelRouter()
 
     # Runs update the UI live, so this writes the same stage info to both SSE and the database.
     def emit_progress(
@@ -382,6 +388,7 @@ class AgentPipeline:
                 self.user_goal,
                 self.student_profile,
                 progress_callback=lambda stage, detail: self.emit_progress(run_id, stage, detail),
+                router=self.model_router,
             )
         )
         return results
@@ -443,6 +450,9 @@ class AgentPipeline:
                 final_score=ranked_contact.evaluation.final_score,
                 ranking_score=ranked_contact.final_score,
                 score_breakdown=json.dumps(ranked_contact.score_breakdown),
+                input_tokens=ranked_contact.evaluation.input_tokens + ranked_contact.evaluation.escalation_input_tokens,
+                output_tokens=ranked_contact.evaluation.output_tokens + ranked_contact.evaluation.escalation_output_tokens,
+                cost_usd=evaluation_cost_usd(ranked_contact.evaluation),
             )
             id_map[contact.name] = contact_id
         return id_map
@@ -478,6 +488,8 @@ class AgentPipeline:
                     "subject": draft.subject,
                     "body": draft.body,
                     "model_used": draft.model_used,
+                    "input_tokens": draft.input_tokens,
+                    "output_tokens": draft.output_tokens,
                 }
             )
         return stored_drafts
@@ -507,6 +519,40 @@ class AgentPipeline:
         avg_tokens_per_evaluation = round(mean([item.tokens_used for item in evaluations]), 1) if evaluations else 0.0
         api_calls_made = sum(1 for item in evaluations if item.model_used not in NON_API_MODELS) + sum(1 for draft in drafts if draft["model_used"] not in NON_API_MODELS)
         insufficient_count = sum(1 for item in evaluations if item.evaluation_status == "insufficient_evidence")
+
+        # Cost / observability: turn token usage into estimated USD, attributing
+        # first-pass tokens to whichever model ran them and escalation tokens to
+        # the primary model. This is reporting-only; it never affects decisions.
+        total_input_tokens = sum(item.input_tokens + item.escalation_input_tokens for item in evaluations)
+        total_output_tokens = sum(item.output_tokens + item.escalation_output_tokens for item in evaluations)
+        eval_cost = sum(evaluation_cost_usd(item) for item in evaluations)
+        draft_input_tokens = sum(int(draft.get("input_tokens", 0) or 0) for draft in drafts)
+        draft_output_tokens = sum(int(draft.get("output_tokens", 0) or 0) for draft in drafts)
+        draft_cost = sum(
+            estimate_cost(draft.get("model_used", ""), int(draft.get("input_tokens", 0) or 0), int(draft.get("output_tokens", 0) or 0))
+            for draft in drafts
+        )
+        cost_by_model: dict[str, dict] = {}
+        for item in evaluations:
+            bucket = cost_by_model.setdefault(item.model_used or "unknown", {"calls": 0, "cost_usd": 0.0})
+            bucket["calls"] += 1
+            bucket["cost_usd"] = round(bucket["cost_usd"] + evaluation_cost_usd(item), 6)
+        for draft in drafts:
+            model = draft.get("model_used", "") or "unknown"
+            bucket = cost_by_model.setdefault(model, {"calls": 0, "cost_usd": 0.0})
+            bucket["calls"] += 1
+            bucket["cost_usd"] = round(
+                bucket["cost_usd"] + estimate_cost(draft.get("model_used", ""), int(draft.get("input_tokens", 0) or 0), int(draft.get("output_tokens", 0) or 0)),
+                6,
+            )
+        total_input_tokens += draft_input_tokens
+        total_output_tokens += draft_output_tokens
+        estimated_cost_usd = round(eval_cost + draft_cost, 6)
+        injection_attempts = sum(1 for item in evaluations if getattr(item, "injection_flagged", False))
+        model_call_distribution: dict[str, int] = {}
+        for item in evaluations:
+            model_call_distribution[item.model_used or "unknown"] = model_call_distribution.get(item.model_used or "unknown", 0) + 1
+
         metrics = {
             "contacts_discovered": contacts_discovered,
             "contacts_after_clean": contacts_after_clean,
@@ -537,7 +583,17 @@ class AgentPipeline:
             "second_pass_count": sum(1 for item in evaluations if item.second_pass_triggered),
             "deep_retrieval_triggered_count": deep_retrieval_triggered_count,
             "deep_retrieval_chunks_added": deep_retrieval_chunks_added,
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "estimated_cost_usd": estimated_cost_usd,
+            "estimated_cost_per_recommended_usd": round(estimated_cost_usd / recommended_count, 6) if recommended_count else 0.0,
+            "cost_by_model": cost_by_model,
+            "model_call_distribution": model_call_distribution,
+            "injection_attempts_detected": injection_attempts,
+            "draft_input_tokens": draft_input_tokens,
+            "draft_output_tokens": draft_output_tokens,
         }
+        metrics.update(self.model_router.snapshot())
         if extraction_audit:
             metrics.update(extraction_audit)
         if self.robots_policy:

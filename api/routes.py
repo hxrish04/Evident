@@ -386,6 +386,22 @@ def get_metrics():
     return db.get_resume_metrics()
 
 
+@app.get("/eval")
+def get_eval_report():
+    """System self-evaluation: run the offline decision-layer benchmark and
+    return its metrics (accuracy, per-class P/R/F1, the safety guarantees, and
+    confidence calibration). The harness stubs the model client, so this makes
+    no live API calls and is safe to hit on demand.
+    """
+    try:
+        from eval.harness import run as run_eval
+
+        report = run_eval()
+        return {"available": True, "metrics": report["metrics"], "results": report["results"]}
+    except Exception as exc:  # pragma: no cover - benchmark should not break the app
+        return {"available": False, "error": str(exc)}
+
+
 @app.get("/runs/{run_id}")
 def get_run(run_id: int):
     db.init_db()

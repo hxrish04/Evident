@@ -5,6 +5,8 @@ Central prompt templates for the Claude-backed stages.
 
 # Ask for a structured audit-trail answer, not a vague vibe check.
 EVALUATE_CONTACT_PROMPT = """
+{security_notice}
+
 You are evaluating whether a public academic or research contact is worth reaching out to.
 
 User goal:
@@ -85,6 +87,8 @@ Vague gaps like "limited information" are not acceptable. Be specific about what
 
 # Push the model to explicitly confirm, upgrade, or downgrade a shaky first pass.
 REEVAL_CONTACT_PROMPT = """
+{security_notice}
+
 A prior evaluation of this contact returned uncertain results.
 Your job is to look harder and either confirm, upgrade, or downgrade the initial assessment.
 

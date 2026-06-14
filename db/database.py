@@ -121,6 +121,9 @@ CREATE TABLE IF NOT EXISTS evaluations (
     confidence_changed INTEGER DEFAULT 0,
     final_status TEXT,
     tokens_used INTEGER DEFAULT 0,
+    input_tokens INTEGER DEFAULT 0,
+    output_tokens INTEGER DEFAULT 0,
+    cost_usd REAL DEFAULT 0,
     model_used TEXT,
     final_score REAL,
     ranking_score REAL,
@@ -305,6 +308,9 @@ def init_db() -> None:
     ensure_column(connection, "evaluations", "confidence_changed", "INTEGER DEFAULT 0")
     ensure_column(connection, "evaluations", "final_status", "TEXT")
     ensure_column(connection, "evaluations", "tokens_used", "INTEGER DEFAULT 0")
+    ensure_column(connection, "evaluations", "input_tokens", "INTEGER DEFAULT 0")
+    ensure_column(connection, "evaluations", "output_tokens", "INTEGER DEFAULT 0")
+    ensure_column(connection, "evaluations", "cost_usd", "REAL DEFAULT 0")
     ensure_column(connection, "evaluations", "ranking_score", "REAL")
 
     ensure_column(connection, "drafts", "run_id", "INTEGER")
@@ -573,6 +579,9 @@ def save_evaluation(
     final_score: float,
     ranking_score: float,
     score_breakdown: str,
+    input_tokens: int = 0,
+    output_tokens: int = 0,
+    cost_usd: float = 0.0,
 ) -> int:
     connection = get_connection()
     cursor = connection.execute(
@@ -584,9 +593,9 @@ def save_evaluation(
             insufficient_reason, evidence_agreement_json, conflicts_detected, conflict_note,
             original_score, original_status, second_pass_triggered, revised_score, revised_status,
             revision_reason, confidence_changed, final_status, tokens_used, model_used,
-            final_score, ranking_score, score_breakdown
+            final_score, ranking_score, score_breakdown, input_tokens, output_tokens, cost_usd
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             run_id,
@@ -621,6 +630,9 @@ def save_evaluation(
             final_score,
             ranking_score,
             score_breakdown,
+            int(input_tokens or 0),
+            int(output_tokens or 0),
+            round(float(cost_usd or 0.0), 6),
         ),
     )
     evaluation_id = cursor.lastrowid
@@ -1233,6 +1245,10 @@ def get_resume_metrics() -> dict:
         "throttled_delays_count": 0,
         "domains_skipped_due_policy_or_block": 0,
         "requests_blocked_by_policy": 0,
+        "total_input_tokens": 0,
+        "total_output_tokens": 0,
+        "injection_attempts_detected": 0,
+        "estimated_cost_usd": 0.0,
     }
     avg_rel_values: list[float] = []
     avg_conf_values: list[float] = []
@@ -1262,8 +1278,12 @@ def get_resume_metrics() -> dict:
             "throttled_delays_count",
             "domains_skipped_due_policy_or_block",
             "requests_blocked_by_policy",
+            "total_input_tokens",
+            "total_output_tokens",
+            "injection_attempts_detected",
         ):
             totals[key] += int(metrics.get(key, 0) or 0)
+        totals["estimated_cost_usd"] = round(totals["estimated_cost_usd"] + float(metrics.get("estimated_cost_usd", 0) or 0), 6)
         if metrics.get("avg_relevance_score") is not None:
             avg_rel_values.append(float(metrics.get("avg_relevance_score", 0) or 0))
         if metrics.get("avg_confidence") is not None:

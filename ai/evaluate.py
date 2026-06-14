@@ -13,6 +13,8 @@ from typing import Optional
 
 import anthropic
 
+from ai.costs import estimate_cost
+from ai.sanitize import INJECTION_GUARD_PREAMBLE, wrap_untrusted
 from ai.signals import (
     build_support_snapshot,
     cap_confidence_for_model,
@@ -36,10 +38,65 @@ from prompts.templates import (
 )
 
 
+# Primary (strong) model: used for the escalation/second pass and as the safe
+# fallback when triage is unavailable.
 DEFAULT_MODEL = os.getenv("ANTHROPIC_EVAL_MODEL", "claude-sonnet-4-5")
 DRAFTING_MODEL = os.getenv("ANTHROPIC_DRAFT_MODEL", DEFAULT_MODEL)
+# Triage (cheap) model: the first pass over every shortlisted contact. Clear
+# cases are decided cheaply here; only uncertain contacts are escalated to the
+# primary model in the second pass. Default to a cheaper tier so the cost-aware
+# behavior is on by default; set ANTHROPIC_TRIAGE_MODEL to the primary model to
+# disable tiering. The structural refusal floor still applies to both tiers.
+TRIAGE_MODEL = os.getenv("ANTHROPIC_TRIAGE_MODEL", "claude-haiku-4-5")
+TIERED_ROUTING_ENABLED = os.getenv("EVIDENT_TIERED_ROUTING", "1").strip().lower() not in {"0", "false", "no"}
 RECOMMENDATION_THRESHOLD = 6.5
 MIN_RECOMMENDATION_EVIDENCE_STRENGTH = 3.5
+
+
+class ModelRouter:
+    """Cheap-first model routing with a self-healing circuit breaker.
+
+    The first pass runs on the cheap triage model; uncertain contacts are later
+    escalated to the primary model by the existing second pass. If the triage
+    model errors (bad id, outage), the router permanently falls back to the
+    primary model for the rest of the run instead of silently degrading every
+    contact to the heuristic path - graceful degradation, not a cliff.
+    """
+
+    def __init__(self, triage_model: str | None = None, primary_model: str | None = None, enabled: bool | None = None):
+        self.primary_model = primary_model or DEFAULT_MODEL
+        self.triage_model = triage_model or TRIAGE_MODEL
+        self.enabled = TIERED_ROUTING_ENABLED if enabled is None else enabled
+        # Tiering only matters when triage differs from the primary model.
+        self.tiering_active = self.enabled and self.triage_model != self.primary_model
+        self.triage_healthy = True
+        self.triage_failures = 0
+        self.escalations = 0
+
+    def first_pass_model(self) -> str:
+        if self.tiering_active and self.triage_healthy:
+            return self.triage_model
+        return self.primary_model
+
+    def used_triage(self, model: str) -> bool:
+        return self.tiering_active and self.triage_healthy and model == self.triage_model
+
+    def note_triage_failure(self) -> None:
+        self.triage_failures += 1
+        self.triage_healthy = False
+
+    def note_escalation(self) -> None:
+        self.escalations += 1
+
+    def snapshot(self) -> dict:
+        return {
+            "tiered_routing_enabled": self.enabled,
+            "triage_model": self.triage_model if self.tiering_active else None,
+            "primary_model": self.primary_model,
+            "triage_circuit_open": self.tiering_active and not self.triage_healthy,
+            "triage_failures": self.triage_failures,
+            "circuit_breaker_escalations": self.escalations,
+        }
 
 
 @dataclass
@@ -72,6 +129,14 @@ class ContactEvaluation:
     final_score: float
     tokens_used: int
     model_used: str
+    # First-pass token split (priced at `model_used`'s rate).
+    input_tokens: int = 0
+    output_tokens: int = 0
+    # Escalation/second-pass token split (always priced at the primary model's
+    # rate). Kept separate so a triage->primary contact is costed exactly.
+    escalation_input_tokens: int = 0
+    escalation_output_tokens: int = 0
+    injection_flagged: bool = False
     raw_contact: Optional[RawContact] = None
 
 
@@ -82,6 +147,8 @@ class OutreachDraft:
     subject: str
     body: str
     model_used: str
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 def get_client() -> anthropic.Anthropic | None:
@@ -108,6 +175,32 @@ def first_text(response) -> str:
     if blocks and hasattr(blocks[0], "text"):
         return blocks[0].text or ""
     return ""
+
+
+def usage_pair(response) -> tuple[int, int]:
+    """Return (input_tokens, output_tokens) from an Anthropic response.
+
+    Kept separate (not just summed) because input and output tokens are priced
+    differently; the cost layer needs the split to estimate spend honestly.
+    """
+    usage = getattr(response, "usage", None)
+    if not usage:
+        return 0, 0
+    return (
+        int(getattr(usage, "input_tokens", 0) or 0),
+        int(getattr(usage, "output_tokens", 0) or 0),
+    )
+
+
+def evaluation_cost_usd(evaluation: "ContactEvaluation") -> float:
+    """Exact estimated USD for one evaluation, accounting for tiered routing.
+
+    First-pass tokens are priced at the model that ran them; escalation tokens
+    are always priced at the primary model's rate.
+    """
+    cost = estimate_cost(evaluation.model_used, evaluation.input_tokens, evaluation.output_tokens)
+    cost += estimate_cost(DEFAULT_MODEL, evaluation.escalation_input_tokens, evaluation.escalation_output_tokens)
+    return round(cost, 6)
 
 
 def evidence_is_structurally_insufficient(contact: RawContact) -> bool:
@@ -723,7 +816,9 @@ def evaluate_contact(
     student_profile: str = "",
     supporting_chunks: list[dict] | None = None,
     contact_id: int | None = None,
+    model: str | None = None,
 ) -> ContactEvaluation:
+    model = model or DEFAULT_MODEL
     selected_chunks = choose_top_chunks(supporting_chunks or [], user_goal, top_n=3)
     evidence_strength_score = compute_evidence_strength_score(
         research_text=contact.research_text,
@@ -734,30 +829,43 @@ def evaluate_contact(
         user_goal=user_goal,
     )
     conflicts_detected, conflict_note = detect_conflicts(supporting_chunks or [], contact)
+    # Wrap every scraped, attacker-reachable field in injection-resistant
+    # delimiters before it touches the prompt. The user_goal/student_profile and
+    # system-computed agreement stay outside the untrusted block.
+    wrapped_research, research_flagged = wrap_untrusted(
+        contact.research_text or "No research description available.", label="public research text"
+    )
+    wrapped_sources, sources_flagged = wrap_untrusted(format_evidence(contact), label="evidence sources")
+    wrapped_chunks, chunks_flagged = wrap_untrusted(
+        format_supporting_evidence(selected_chunks), label="retrieved evidence"
+    )
+    injection_flagged = research_flagged or sources_flagged or chunks_flagged
     prompt = EVALUATE_CONTACT_PROMPT.format(
+        security_notice=INJECTION_GUARD_PREAMBLE,
         user_goal=user_goal,
         student_profile=student_profile or "No student profile provided.",
         verification_status=f"identity_verified={contact.identity_verified}, identity_confidence={contact.identity_confidence}",
-        evidence_sources=format_evidence(contact),
-        evidence_chunks=format_supporting_evidence(selected_chunks),
+        evidence_sources=wrapped_sources,
+        evidence_chunks=wrapped_chunks,
         conflict_note=conflict_note or "No conflicting signals were detected in public sources for this contact.",
         evidence_agreement=summarize_evidence_agreement(detect_evidence_agreement(supporting_chunks or [], contact)),
         name=contact.name,
         title=contact.title,
         email=contact.email or "Not found",
         url=contact.url or contact.source_page or "Not available",
-        research_text=contact.research_text or "No research description available.",
+        research_text=wrapped_research,
     )
 
     client = get_client()
     if client is None:
         fallback = fallback_evaluation(contact, user_goal, student_profile)
         fallback.contact_id = contact_id
+        fallback.injection_flagged = injection_flagged
         return fallback
 
     try:
         response = client.messages.create(
-            model=DEFAULT_MODEL,
+            model=model,
             max_tokens=500,
             messages=[{"role": "user", "content": prompt}],
         )
@@ -806,7 +914,7 @@ def evaluate_contact(
             evaluation_status=evaluation_status,
         )
         confidence_label, confidence_score = maybe_degrade_for_agreement(confidence_label, evidence_agreement)
-        confidence_label, confidence_score = cap_confidence_for_model(confidence_label, DEFAULT_MODEL)
+        confidence_label, confidence_score = cap_confidence_for_model(confidence_label, model)
         confidence_justification = compute_confidence_justification(
             relevance_score=relevance_score,
             confidence_label=confidence_label,
@@ -856,11 +964,11 @@ def evaluate_contact(
             confidence_changed=False,
             final_status=evaluation_status,
             final_score=relevance_score,
-            tokens_used=(
-                int(getattr(response.usage, "input_tokens", 0) or 0) +
-                int(getattr(response.usage, "output_tokens", 0) or 0)
-            ) if getattr(response, "usage", None) else 0,
-            model_used=DEFAULT_MODEL,
+            tokens_used=sum(usage_pair(response)),
+            model_used=model,
+            input_tokens=usage_pair(response)[0],
+            output_tokens=usage_pair(response)[1],
+            injection_flagged=injection_flagged,
             raw_contact=contact,
         )
     except Exception as exc:
@@ -868,6 +976,7 @@ def evaluate_contact(
         fallback = fallback_evaluation(contact, user_goal, student_profile)
         # Persistence depends on contact_id; keep it when falling back so evaluations are still stored and queryable per run.
         fallback.contact_id = contact_id
+        fallback.injection_flagged = injection_flagged
         return fallback
 
 
@@ -882,14 +991,21 @@ def reevaluate_contact(
         return evaluation
 
     agreement = evaluation.evidence_agreement or detect_evidence_agreement(additional_chunks or [], evaluation.raw_contact or RawContact(name=evaluation.contact_name))
+    wrapped_additional, additional_flagged = wrap_untrusted(
+        format_supporting_evidence(choose_top_chunks(additional_chunks or [], user_goal, top_n=4)),
+        label="additional retrieved evidence",
+    )
+    if additional_flagged:
+        evaluation.injection_flagged = True
     prompt = REEVAL_CONTACT_PROMPT.format(
+        security_notice=INJECTION_GUARD_PREAMBLE,
         initial_status=evaluation.original_status,
         initial_score=evaluation.original_score,
         initial_confidence=evaluation.confidence_label,
         initial_reasoning=reason_trace_text(evaluation.reason_trace),
         conflict_note=evaluation.conflict_note or "No conflict note recorded.",
         evidence_agreement=summarize_evidence_agreement(agreement),
-        additional_chunks=format_supporting_evidence(choose_top_chunks(additional_chunks or [], user_goal, top_n=4)),
+        additional_chunks=wrapped_additional,
     )
     try:
         response = client.messages.create(
@@ -964,10 +1080,15 @@ def reevaluate_contact(
         else:
             evaluation.not_recommended_reason = None
             evaluation.insufficient_reason = None
-        evaluation.tokens_used += (
-            int(getattr(response.usage, "input_tokens", 0) or 0) +
-            int(getattr(response.usage, "output_tokens", 0) or 0)
-        ) if getattr(response, "usage", None) else 0
+        # The escalation runs on the primary model. Bank its tokens separately
+        # so cost-by-model attribution stays exact even when the first pass used
+        # the cheaper triage model. `model_used` keeps the first-pass label;
+        # `second_pass_triggered` already records that the primary model had the
+        # final word.
+        reeval_input, reeval_output = usage_pair(response)
+        evaluation.tokens_used += reeval_input + reeval_output
+        evaluation.escalation_input_tokens += reeval_input
+        evaluation.escalation_output_tokens += reeval_output
         return evaluation
     except Exception as exc:
         print(f"[ai/reeval] Keeping first-pass decision for {evaluation.contact_name}: {exc}")
@@ -980,8 +1101,10 @@ def evaluate_all(
     student_profile: str = "",
     min_research_length: int = 40,
     progress_callback=None,
+    router: "ModelRouter | None" = None,
 ) -> list[ContactEvaluation]:
     results: list[ContactEvaluation] = []
+    router = router or ModelRouter()
 
     for contact_id, contact, supporting_chunks in contacts:
         if progress_callback:
@@ -1000,8 +1123,20 @@ def evaluate_all(
                 evidence=contact.evidence,
                 evidence_chunks=contact.evidence_chunks,
             )
-        print(f"[ai/evaluate] Evaluating: {contact.name}")
-        results.append(evaluate_contact(contact, user_goal, student_profile, supporting_chunks, contact_id))
+        first_model = router.first_pass_model()
+        print(f"[ai/evaluate] Evaluating: {contact.name} (model={first_model})")
+        evaluation = evaluate_contact(contact, user_goal, student_profile, supporting_chunks, contact_id, model=first_model)
+
+        # Circuit breaker: if the triage model failed (only an API/model error
+        # drops to the heuristic path here), retry this contact once on the
+        # primary model and stop using triage for the rest of the run.
+        if router.used_triage(first_model) and evaluation.model_used == "heuristic-fallback":
+            print(f"[ai/evaluate] Triage model unavailable; escalating {contact.name} to {router.primary_model}")
+            router.note_triage_failure()
+            router.note_escalation()
+            evaluation = evaluate_contact(contact, user_goal, student_profile, supporting_chunks, contact_id, model=router.primary_model)
+
+        results.append(evaluation)
 
     return results
 
@@ -1184,12 +1319,15 @@ def generate_email(
             messages=[{"role": "user", "content": prompt}],
         )
         data = parse_json_payload(first_text(response))
+        draft_input, draft_output = usage_pair(response)
         return OutreachDraft(
             contact_name=evaluation.contact_name,
             contact_email=evaluation.raw_contact.email if evaluation.raw_contact else "",
             subject=finalize_email_output(data.get("subject", "Research Opportunity").strip()),
             body=finalize_email_output(data.get("body", "").strip()),
             model_used=DRAFTING_MODEL,
+            input_tokens=draft_input,
+            output_tokens=draft_output,
         )
     except Exception as exc:
         print(f"[ai/draft] Falling back for {evaluation.contact_name}: {exc}")

@@ -1,0 +1,29 @@
+name: CI
+
+# Runs the decision-layer evaluation harness and unit tests as a regression
+# gate. No API key required: the harness stubs the model client, so the
+# "refuse when evidence is weak" and injection-defense guarantees are checked
+# deterministically on every push.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+      - name: Run decision-layer evaluation (offline, no API)
+        run: python -m eval.run --quiet
+      - name: Run tests
+        run: python -m pytest tests/ -q
