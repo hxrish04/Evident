@@ -299,6 +299,11 @@ class Fetcher:
                     raise
 
             self._dismiss_cookie_banner(page)
+            # Client-rendered (SPA) pages often finish hydrating AFTER networkidle,
+            # leaving an near-empty shell at capture time. Give the body text a
+            # few seconds to populate before scrolling/capturing. Returns fast
+            # when the page is already full, so server-rendered pages pay nothing.
+            self._wait_for_content(page)
             if self.cfg.get("auto_scroll", True):
                 self._auto_scroll(page)
 
@@ -320,6 +325,21 @@ class Fetcher:
             fetched_at=time.time(),
             fetch_method="browser",
         )
+
+    def _wait_for_content(self, page) -> None:
+        """Wait (briefly) for client-rendered body text to populate."""
+        min_chars = int(self.cfg.get("content_settle_min_chars", 600))
+        timeout_ms = int(self.cfg.get("content_settle_timeout_ms", 6000))
+        try:
+            page.wait_for_function(
+                "() => (document.body ? document.body.innerText : '')"
+                "       .replace(/\\s+/g,' ').trim().length > " + str(min_chars),
+                timeout=timeout_ms,
+            )
+        except Exception:
+            # Never populated within the budget (empty page or interaction-gated);
+            # continue with whatever rendered.
+            pass
 
     @staticmethod
     def _dismiss_cookie_banner(page) -> None:

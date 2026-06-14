@@ -125,24 +125,19 @@ You MUST call the tool `record_target_page` exactly once.
 
 
 def build_discovery_tool() -> dict:
+    # `urls` is a flat array of URL strings (no per-item prose) so the response
+    # stays compact — a directory with hundreds of profiles would otherwise blow
+    # past max_tokens, truncate the JSON, and yield zero usable URLs.
     return {
         "name": "record_target_urls",
-        "description": "Record URLs of likely target pages found among the candidate links.",
+        "description": "Record the URLs of likely target pages found among the candidate links.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "urls": {
                     "type": "array",
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "url": {"type": "string", "description": "Absolute URL copied exactly from the candidate list."},
-                            "item_name": {"type": ["string", "null"], "description": "Item name shown by the site, if visible."},
-                            "notes": {"type": ["string", "null"], "description": "Short reason this looks like a target page."},
-                        },
-                        "required": ["url", "item_name", "notes"],
-                        "additionalProperties": False,
-                    },
+                    "description": "Absolute URLs copied EXACTLY from the candidate list, one per target page.",
+                    "items": {"type": "string"},
                 },
             },
             "required": ["urls"],

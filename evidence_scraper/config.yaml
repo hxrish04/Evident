@@ -34,6 +34,8 @@ fetch:
   max_scroll_steps: 8
   scroll_pause_ms: 700
   max_load_more_clicks: 3       # click "Load more" buttons up to N times
+  content_settle_min_chars: 600   # wait for client-rendered body text to reach this...
+  content_settle_timeout_ms: 8000 # ...up to this long, so SPA pages finish hydrating
 
 extraction:
   max_chars_per_page: 60000     # hard cap on chars sent to Claude per page

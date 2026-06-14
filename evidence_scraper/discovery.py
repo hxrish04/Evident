@@ -10,7 +10,7 @@ import logging
 from collections import deque
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Callable, List, Optional, Set, Tuple
 from urllib.parse import urldefrag, urljoin, urlparse
 
 import httpx
@@ -144,7 +144,8 @@ def _sitemap_in_locale(sitemap_url: str, prefixes: Set[str]) -> bool:
 
 
 def discover_via_sitemap(
-    start_urls: List[str], user_agent: str, timeout: int, max_pages: int
+    start_urls: List[str], user_agent: str, timeout: int, max_pages: int,
+    keep_predicate: Optional[Callable[[str], bool]] = None,
 ) -> Set[str]:
     found: Set[str] = set()
     seen_sitemaps: Set[str] = set()
@@ -179,8 +180,12 @@ def discover_via_sitemap(
                     queue.append(s)
             for p in pages:
                 normalized = normalize(p)
+                # Keep pages under the start path, plus same-host pages a caller
+                # marks relevant (e.g. a faculty-sitemap's profile URLs that live
+                # outside the directory's path scope).
                 if not in_start_scope(normalized, start_urls):
-                    continue
+                    if not (keep_predicate and keep_predicate(normalized)):
+                        continue
                 found.add(normalized)
                 if len(found) >= max_pages:
                     break

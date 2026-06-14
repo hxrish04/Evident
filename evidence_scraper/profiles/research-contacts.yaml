@@ -38,23 +38,39 @@ attributes:
     description: "Department, lab, school, or organization they belong to."
 
 discovery:
+  # Broad vocabulary so this works on ANY people directory, not one layout.
+  # Recognition is deliberately generous — the LLM step discards false positives.
   include_keywords:
     - "faculty"
     - "people"
-    - "team"
-    - "staff"
-    - "directory"
+    - "person"
     - "profile"
+    - "directory"
+    - "staff"
+    - "team"
+    - "member"
+    - "attorney"
+    - "physician"
   url_hints:
     - "/people/"
+    - "/person/"
     - "/faculty/"
-    - "/team/"
-    - "/staff/"
     - "/profile/"
+    - "/profiles/"
+    - "/staff/"
+    - "/team/"
+    - "/member"
+    - "/bio/"
+    - "/attorney"
+    - "/provider"
+    - "/u/"
+    - "/~"
   exclude_patterns:
     - "/news"
     - "/events"
     - "/courses"
+    - "/category"
+    - "/tag/"
 
 extraction_rules:
   - "If the page is a single person's profile, extract that one person."

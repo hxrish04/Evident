@@ -67,11 +67,31 @@ def _collect_anchor_candidates(
             continue
         if not _is_allowed_domain(url, start_urls):
             continue
-        if not in_start_scope(url, start_urls):
-            continue
         if url_filter.is_excluded(url):
             continue
         text = " ".join(anchor.get_text(" ", strip=True).split())
+        if not text:
+            # Directories often link people via image/cards with no anchor text.
+            # Recover a label from aria-label/title/img-alt, then fall back to a
+            # humanized URL slug, so the model still gets a name to recognize the
+            # profile (e.g. /people/costas-a-anastassiou -> "costas a anastassiou").
+            img = anchor.find("img")
+            text = (anchor.get("aria-label") or anchor.get("title")
+                    or (img.get("alt") if img else "") or "").strip()
+            if not text:
+                slug = urlparse(url).path.rstrip("/").rsplit("/", 1)[-1]
+                text = slug.replace("-", " ").replace("_", " ").strip()
+        # Keep links under the start path, but also keep same-host links that
+        # look relevant even if they sit OUTSIDE that path — individual profile
+        # pages are frequently siblings of the directory (e.g. /people/jane-doe
+        # vs a /people/faculty start), and a strict path scope drops them all.
+        relevant = (
+            url_filter.looks_relevant(url)
+            or url_filter.looks_relevant(text)
+            or url_filter.has_url_hint(url)
+        )
+        if not in_start_scope(url, start_urls) and not relevant:
+            continue
         seen.add(url)
         candidates.append({"url": url, "text": text})
 
@@ -184,6 +204,7 @@ def discover_via_ai(
                 user_agent=user_agent or DEFAULT_USER_AGENT,
                 timeout=int(timeout_sec),
                 max_pages=disc_cfg.get("max_pages_per_site", 400),
+                keep_predicate=lambda u: url_filter.looks_relevant(u) or url_filter.has_url_hint(u),
             )
             for u in sorted(sm):
                 if u not in existing and not url_filter.is_excluded(u):
@@ -208,7 +229,11 @@ def discover_via_ai(
         return []
 
     allowed_urls = {c["url"] for c in candidates}
-    client = Anthropic(api_key=api_key, timeout=timeout_sec)
+    # `request_timeout_sec` governs HTTP fetches; the discovery LLM call needs a
+    # much larger budget because a big candidate list (large sites) can take well
+    # over 30s to process. Use a dedicated, generous timeout with one retry.
+    llm_timeout = float(disc_cfg.get("llm_timeout_sec", 120) or 120)
+    client = Anthropic(api_key=api_key, timeout=llm_timeout, max_retries=1)
     user_msg = (
         f"Site: {site.name}\n"
         f"Site domain(s): {', '.join(_hostnames(start_urls))}\n"
@@ -221,12 +246,14 @@ def discover_via_ai(
 
     resp = client.messages.create(
         model=model,
-        max_tokens=4096,
+        max_tokens=8192,
         system=build_discovery_system_prompt(profile),
         tools=[build_discovery_tool()],
         tool_choice={"type": "tool", "name": "record_target_urls"},
         messages=[{"role": "user", "content": user_msg}],
     )
+    if resp.stop_reason == "max_tokens":
+        log.warning("[%s] discovery response hit max_tokens; URL list may be truncated", site.name)
 
     payload = None
     for block in resp.content:
@@ -239,8 +266,8 @@ def discover_via_ai(
 
     records: List[UrlRecord] = []
     seen: set = set()
-    for item in payload.get("urls") or []:
-        url = str(item.get("url") or "").strip()
+    for raw in payload.get("urls") or []:
+        url = str(raw or "").strip()
         if not url or url in seen:
             continue
         if url not in allowed_urls:
@@ -250,16 +277,11 @@ def discover_via_ai(
             log.info("[%s] skipped out-of-domain URL: %s", site.name, url)
             continue
         seen.add(url)
-        item_name = str(item.get("item_name") or "").strip()
-        notes = str(item.get("notes") or "").strip() or None
-        if item_name:
-            notes = f"AI returned item: {item_name}. {notes or ''}".strip()
         records.append(
             UrlRecord(
                 url=url,
                 candidate_id=slug_from_url(url),
                 discovery_method="ai",
-                notes=notes,
             )
         )
     return records
