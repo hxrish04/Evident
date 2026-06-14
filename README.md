@@ -16,29 +16,7 @@ Evident is a bounded AI decision system that ranks research contacts with eviden
 
 ### System architecture
 
-```mermaid
-flowchart TD
-    A[Input: Faculty URL + Research Focus] --> B[Extract + structure evidence]
-    B --> C[LLM evaluation + confidence scoring]
-    C --> D{Sufficient confidence?}
-
-    D -- Yes --> E[Rank contacts]
-    D -- No --> F[Bounded loop: 1 retrieval + 1 re-check]
-    F --> E
-
-    E --> G[Outreach drafts: top-ranked only]
-    E --> H[Audit trail: citations + confidence + decisions]
-
-    subgraph Controls["Reliability and Cost Controls - Supporting"]
-      I[Run caps on evals, drafts, retries]
-      J[Pre-filter cuts model calls]
-      K[Refusal state: insufficient evidence]
-    end
-
-    Controls -.-> C
-
-    style K fill:#2b2b2b,stroke:#60a5fa,stroke-width:2px,color:#ffffff
-```
+![Evident system architecture](docs/architecture.png)
 
 ### Why this is different
 
@@ -177,10 +155,7 @@ Case-file proof view with cited evidence and confidence context.
 Draft workspace showing recommendation-linked outreach email generation.
 
 ![Insights](docs/screenshots/04-insights-view.png)
-Run-level quality, confidence mix, and efficiency metrics.
-
-![Agentic loop proof](docs/screenshots/05-agentic-loop-proof.png)
-Bounded loop proof: second-pass counts plus adaptive retrieval trigger/chunk metrics.
+Run-level quality and the cost panel: estimated USD, cost-per-recommended, tiered model routing, second-pass counts, and adaptive retrieval metrics.
 
 ---
 
