@@ -16,7 +16,7 @@ Evident is a bounded AI decision system that ranks research contacts with eviden
 
 ### System architecture
 
-![Evident system architecture](docs/architecture.png)
+![Evident system architecture](docs/architecture.webp)
 
 ### Why this is different
 
@@ -145,16 +145,16 @@ Anthropic Claude · Server-Sent Events · Docker · AWS ECS/Fargate
 
 ## Product screens
 
-![Overview](docs/screenshots/01-overview.png)
+![Overview](docs/screenshots/01-overview.webp)
 Launch panel + live run controls for a full pass.
 
-![Evidence](docs/screenshots/02-evidence-view.png)
+![Evidence](docs/screenshots/02-evidence-view.webp)
 Case-file proof view with cited evidence and confidence context.
 
-![Drafts](docs/screenshots/03-draft-view.png)
+![Drafts](docs/screenshots/03-draft-view.webp)
 Draft workspace showing recommendation-linked outreach email generation.
 
-![Insights](docs/screenshots/04-insights-view.png)
+![Insights](docs/screenshots/04-insights-view.webp)
 Run-level quality and the cost panel: estimated USD, cost-per-recommended, tiered model routing, second-pass counts, and adaptive retrieval metrics.
 
 ---
