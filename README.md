@@ -145,14 +145,14 @@ Anthropic Claude · Server-Sent Events · Docker · AWS ECS/Fargate
 
 ## Product screens
 
+> Contact names and emails are blurred in these screenshots — the app runs on
+> real scraped data, and this is real output with the personal info redacted.
+
 ![Overview](docs/screenshots/01-overview.webp)
-Launch panel + live run controls for a full pass.
+Workspace: a ranked shortlist with the selected case file, recommendation, confidence, and reasoning.
 
 ![Evidence](docs/screenshots/02-evidence-view.webp)
-Case-file proof view with cited evidence and confidence context.
-
-![Drafts](docs/screenshots/03-draft-view.webp)
-Draft workspace showing recommendation-linked outreach email generation.
+Case file: cited evidence and an audit-style breakdown behind the decision (including an explicit "not recommended" when the evidence is too thin).
 
 ![Insights](docs/screenshots/04-insights-view.webp)
 Run-level quality and the cost panel: estimated USD, cost-per-recommended, tiered model routing, second-pass counts, and adaptive retrieval metrics.
