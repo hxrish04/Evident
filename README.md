@@ -145,8 +145,8 @@ Anthropic Claude · Server-Sent Events · Docker · AWS ECS/Fargate
 
 ## Product screens
 
-> Contact names and emails are blurred in these screenshots — the app runs on
-> real scraped data, and this is real output with the personal info redacted.
+> Contact names and emails are blurred in these screenshots. The app runs on
+> real scraped data; this is real output with the personal info redacted.
 
 ![Overview](docs/screenshots/01-overview.webp)
 Workspace: a ranked shortlist with the selected case file, recommendation, confidence, and reasoning.
